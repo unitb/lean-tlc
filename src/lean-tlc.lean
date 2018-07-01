@@ -17,9 +17,9 @@ meta structure tla_module :=
   (name : string)
   (exts : list string)
   (vars : decls)
-  (invs : pexpr)
-  (init : pexpr)
-  (next : pexpr)
+  (invs : expr)
+  (init : expr)
+  (next : expr)
 
 -- TODO: do we need a tla_config struct?
 
@@ -39,15 +39,16 @@ meta def primed_name : name → name
 | (name.mk_string s n) := name.mk_string (s ++ "'") n
 | n := n
 
-meta def scope_check (vs : decls) (p : pexpr) (primed := ff) : tactic expr :=
-do let vs'' := if primed then vs.map (prod.map primed_name id)
-                         else [],
-   vs' ← (vs'' ++ vs).mmap $ uncurry $ λ n t,
-       (to_expr t >>= mk_local_def n),
-   let tgt := expr.pis vs' `(true),
-   prod.fst <$> solve_aux tgt (do
-     intron vs'.length,
-     to_expr p)
+meta def scope_check (vs : list expr) (p : pexpr) (primed := ff) : tactic (expr × expr) :=
+do -- let vs'' := if primed then vs.map (prod.map primed_name id)
+   --                       else [],
+   -- vs' ← (vs'' ++ vs).mmap $ uncurry $ λ n t,
+   --     (to_expr t >>= mk_local_def n),
+   let tgt := expr.pis vs `(Prop),
+   solve_aux tgt (do
+     intron vs.length, -- Prop
+     p ← to_expr p,
+     p <$ exact p )
 
 meta def lean_to_tla : expr -> tactic format
 | `(%%x = %%y) :=
@@ -77,9 +78,9 @@ do xx <- lean_to_tla x,
              else fail format!"unsupported: {e'}"
 
 meta def mk_module (module : tla_module) : tactic (list string) :=
-do inv  ← (scope_check module.vars module.invs <|> fail "A") >>= lean_to_tla,
-   init ← (scope_check module.vars module.init <|> fail "B") >>= lean_to_tla,
-   next ← (scope_check module.vars module.next tt <|> fail "C") >>= lean_to_tla,
+do inv  ← lean_to_tla module.invs,
+   init ← lean_to_tla module.init,
+   next ← lean_to_tla module.next,
    return $ to_string <$>
    [ format!"------- MODULE {module.name} ---------"
    , format!"EXTENDS {my_to_format module.exts}"
@@ -116,15 +117,19 @@ do nm ← ident, trace nm,
    ext ← comma_sep ident, trace ext,
    tk "variables",
    vars ← comma_sep ident, trace vars,
+   vars ← vars.mmap $ λ n,
+       (mk_local_def n `(int)),
    tk "invariant",
    inv ← texpr, -- trace vars,
    tk "init",
    int ← texpr, -- trace vars,
-   let vars' := vars.map (λ x, prod.mk x ``(ℤ)),
-   scope_check vars' inv,
-   scope_check vars' int,
-   add_decl $ mk_definition `inv [] _ inv,
+   -- let vars' := vars.map (λ x, prod.mk x ``(ℤ)),
+   (inv,linv) ← scope_check vars inv,
+   (int,lint) ← scope_check vars int,
    trace inv, trace int,
+   trace linv, trace lint,
+   add_decl $ mk_definition `invariably [] (expr.pis vars `(Prop)) linv,
+   add_decl $ mk_definition `initial [] (expr.pis vars `(Prop)) lint,
 
    tk "end"
 
