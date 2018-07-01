@@ -1,20 +1,28 @@
 import system.io
 open io
 
-structure tla_module :=
+section fmt
+open format
+universe u
+meta def my_to_format {α : Type u} [has_to_format α] : list α → format
+| [] := to_fmt ""
+| xs := group (nest 1 $ format.join $ list.intersperse ("," ++ line) $ xs.map to_fmt)
+end fmt
+
+meta structure tla_module :=
   (name : string)
-  (exts : string) -- TODO: make a `list string'
-  (vars : string) -- TODO: make a name→string map
-  (invs : string) -- TODO: make a name→string map
-  (init : string) -- TODO: support custom name ?
-  (next : string) -- TODO: support custom name ?
+  (exts : list string)
+  (vars : list name)
+  (invs : pexpr)
+  (init : pexpr)
+  (next : pexpr)
 
 -- TODO: do we need a tla_config struct?
 
 meta def mk_module (module : tla_module) : list string :=
 do to_string <$>
    [ format!"------- MODULE {module.name} ---------"
-   , format!"EXTENDS {module.exts}"
+   , format!"EXTENDS {my_to_format module.exts}"
    , format!"VARIABLES {module.vars}"
    , format!"Invs == {module.invs}"
    , format!"Init == {module.init}"
@@ -33,10 +41,9 @@ do h ← mk_file_handle filename mode.write,
 
 def ioexp : tla_module :=
 { name := "ioexp"
--- , exts := ["Integers"]
 -- , vars := ["x"]
 -- , invs := ["x <= 3"]
-, exts := "Integers"
+, exts := ["Integers", "FiniteSets"]
 , vars := "x"
 , invs := "x <= 3"
 , init := "x = 0"
